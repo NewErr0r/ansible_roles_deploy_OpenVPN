@@ -1,0 +1,25 @@
+---
+timezone: "Europe/Moscow"
+
+openvpn_easyrsa_dir: /usr/share/easy-rsa/3
+openvpn_dir: "/etc/openvpn"
+openvpn_port: "443"
+openvpn_proto: "udp"
+openvpn_network: "10.9.0.0"
+openvpn_netmask: "255.255.255.0"
+
+openvpn_clients:
+  - client1
+  - client2
+  - client3
+
+# vars file
+KEY_COUNTRY: "RU"
+KEY_PROVINCE: "Sankt-Petersburg"
+KEY_CITY: "Sankt-Petersburg"
+KEY_ORG: "CHAMP FIRST"
+KEY_EMAIL: "admin@champ.first"
+KEY_CN: "CHAMP"
+KEY_OU: "CHAMP"
+KEY_NAME: "name-openvpn-server.champ.first"
+KEY_ALTNAMES: "name-openvpn-server"

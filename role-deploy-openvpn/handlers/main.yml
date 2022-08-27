@@ -1,0 +1,14 @@
+---
+- name: Restart firewalld
+  service: 
+    name: firewalld 
+    state: restarted
+
+- name: Started and Enabled OpenVPN
+  service: 
+    name: openvpn-server@server
+    enabled: true  
+    state: started 
+
+
+   

@@ -1,0 +1,164 @@
+---
+- name: "Configure timezone {{ timezone }}"
+  command: timedatectl set-timezone {{ timezone }}
+
+- name: Install chrony 
+  dnf: 
+    name: chrony
+    state: latest 
+
+- name: Started and Enabled chrony
+  service: 
+    name: chronyd
+    enabled: true 
+    state: started
+
+- name: Disable SELinux now 
+  command: setenforce 0 
+  ignore_errors: true 
+
+- name: Disable SELinux 
+  ansible.posix.selinux: 
+    state: disabled
+
+- name: Configure Firewalld
+  firewalld: 
+    port: "{{ openvpn_port }}/{{ openvpn_proto }}"
+    permanent: yes 
+    state: enabled 
+
+- name: Enable IPv4 forwarding
+  ansible.posix.sysctl:
+    name: net.ipv4.ip_forward
+    value: '1'
+    sysctl_set: yes
+    state: present 
+    reload: yes
+    ignoreerrors: true 
+  failed_when: false
+
+- name: Create NAT Chain 
+  firewalld:
+    masquerade: yes
+    state: enabled
+    permanent: yes
+    zone: public
+  notify:
+    - Restart firewalld
+
+- name: Install epel-release
+  dnf: 
+    name: epel-release
+    state: latest 
+
+- name: Install packages OpenVPN
+  dnf: 
+    name: 
+      - openvpn 
+      - easy-rsa 
+    state: latest
+
+- name: "Ensure {{ openvpn_dir }}/easy-rsa exists"
+  file: 
+    path: "{{ openvpn_dir }}/easy-rsa"
+    state: directory
+    mode: 0755
+    
+- name: Create vars file 
+  copy: 
+    dest: "{{ openvpn_easyrsa_dir }}/vars"
+    content: | 
+      export KEY_COUNTRY="{{ KEY_COUNTRY }}"
+      export KEY_PROVINCE="{{ KEY_PROVINCE }}"
+      export KEY_CITY="{{ KEY_CITY }}"
+      export KEY_ORG="{{ KEY_ORG }}"
+      export KEY_EMAIL="{{ KEY_EMAIL }}"
+      export KEY_CN="{{ KEY_CN }}"
+      export KEY_OU="{{ KEY_OU }}"
+      export KEY_NAME="{{ KEY_NAME }}"
+      export KEY_ALTNAMES="{{ KEY_ALTNAMES }}"
+
+- name: OpenVPN | easy-rsa init-pki
+  command: 
+    cmd: "{{ openvpn_easyrsa_dir }}/easyrsa init-pki"
+    chdir: "{{ openvpn_dir }}/easy-rsa"
+    creates: "{{ openvpn_dir }}/easy-rsa/pki"
+
+- name: OpenVPN | easy-rsa build-ca
+  command: 
+    cmd: "{{ openvpn_easyrsa_dir }}/easyrsa build-ca nopass"
+    chdir: "{{ openvpn_dir }}/easy-rsa"
+    creates: "{{ openvpn_dir }}/easy-rsa/pki/ca.crt"
+  environment:
+    EASYRSA_BATCH: "yes"
+
+- name: OpenVPN | easy-rsa gen-dh
+  command: 
+    cmd: "{{ openvpn_easyrsa_dir }}/easyrsa gen-dh"
+    chdir: "{{ openvpn_dir }}/easy-rsa"
+    creates: "{{ openvpn_dir }}/easy-rsa/pki/dh.pem"   
+
+- name: OpenVPN | easy-rsa server nopass
+  command: 
+    cmd: "{{ openvpn_easyrsa_dir }}/easyrsa build-client-full server nopass"
+    chdir: "{{ openvpn_dir }}/easy-rsa"
+    creates: "{{ openvpn_dir }}/easy-rsa/pki/issued/server.crt"   
+
+## clients 
+- name: OpenVPN | easy-rsa client nopass
+  command: 
+    cmd: "{{ openvpn_easyrsa_dir }}/easyrsa build-client-full {{ item }} nopass"
+    chdir: "{{ openvpn_dir }}/easy-rsa"
+    creates: "{{ openvpn_dir }}/easy-rsa/pki/issued/{{ item }}.crt"  
+  with_items:
+    - "{{ openvpn_clients }}"
+
+- name: OpenVPN | easy-rsa gen-crl
+  command: 
+    cmd: "{{ openvpn_easyrsa_dir }}/easyrsa gen-crl"
+    chdir: "{{ openvpn_dir }}/easy-rsa"
+    creates: "{{ openvpn_dir }}/easy-rsa/pki/crl.pem"   
+
+- name: OpenVPN | openvpn genkey
+  command: 
+    cmd: "openvpn --genkey --secret {{ openvpn_dir }}/easy-rsa/pki/ta.key"
+    creates: "{{ openvpn_dir }}/easy-rsa/pki/ta.key"  
+
+- name: "OpenVPN | copy files to {{ openvpn_dir }}/server"
+  ansible.builtin.copy:
+    src: "{{ openvpn_dir }}/easy-rsa/pki/{{ item }}"
+    dest: "{{ openvpn_dir }}/server/{{ item | basename }}"
+    mode: "0644"
+    remote_src: true
+  loop:
+    - ca.crt
+    - dh.pem
+    - ta.key 
+    - private/ca.key
+    - private/server.key
+    - issued/server.crt
+
+- name: "OpenVPN | copy files to {{ openvpn_dir }}"
+  ansible.builtin.copy:
+    src: "{{ openvpn_dir }}/easy-rsa/pki/{{ item }}"
+    dest: "{{ openvpn_dir }}/{{ item | basename }}"
+    mode: "0644"
+    remote_src: true
+  loop:
+    - ca.crt
+    - ta.key 
+
+- name: Create directory for log 
+  file: 
+    path: /var/log/openvpn
+    state: directory
+
+- name: OpenVPN | place server.conf
+  template: 
+    src: server.conf.j2
+    dest: "{{ openvpn_dir }}/server/server.conf"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: 
+    - Started and Enabled OpenVPN

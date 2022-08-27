@@ -1,0 +1,6 @@
+---
+- name: Deploy OpenVPN server 
+  include_tasks: server.yaml
+
+- name: Deploy OpenVPN client 
+  include_tasks: client.yaml
