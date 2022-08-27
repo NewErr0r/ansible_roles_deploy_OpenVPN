@@ -1,0 +1,7 @@
+---
+- name: Deploy OpenVPN Server 
+  hosts: vpn 
+  become: true 
+
+  roles:
+    - role-deploy-openvpn
